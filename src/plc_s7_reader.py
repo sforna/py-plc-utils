@@ -33,6 +33,8 @@ def parse_data(data, data_type, offset, string_length=None):
             if string_length is None:
                 raise ValueError("Per il tipo 'string', è necessario specificare la lunghezza.")
             return get_string(data, offset, string_length)
+        elif data_type == 'udint':
+            return get_udint(data, offset)
         else:
             print("Tipo di dato non supportato.")
             return None
@@ -66,6 +68,8 @@ def main():
             size = 2  # 2 byte per un int
         elif data_type == 'real':
             size = 4  # 4 byte per un real
+        elif data_type == 'udint':
+            size = 4  # 4 byte per un udint
         elif data_type == 'string':
             string_length = int(input("Inserisci la lunghezza della stringa (in byte): "))
             size = string_length  # La dimensione è uguale alla lunghezza della stringa
