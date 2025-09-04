@@ -10,7 +10,7 @@ def connect_to_plc(ip, rack, slot, port=102):
         return plc
     except Exception as e:
         print(f"Errore durante la connessione al PLC: {e}")
-        sys.exit(1)
+        return None
 
 def read_plc_data(plc, db_number, start_offset, size):
     try:
@@ -47,12 +47,21 @@ def get_string(data, offset, length):
     return data[offset:offset + length].decode('utf-8').strip('\x00')
 
 def main():
-    ip = input("Inserisci l'indirizzo IP del PLC: ")
-    port = int(input("Inserisci la porta (default 102): ") or 102)
-    rack = int(input("Inserisci il numero di rack (default 0): ") or 0)
-    slot = int(input("Inserisci il numero di slot (default 0): ") or 0)
+    plc = None
+    
+    while plc is None:
+        ip = input("Inserisci l'indirizzo IP del PLC: ")
+        port = int(input("Inserisci la porta (default 102): ") or 102)
+        rack = int(input("Inserisci il numero di rack (default 0): ") or 0)
+        slot = int(input("Inserisci il numero di slot (default 0): ") or 0)
 
-    plc = connect_to_plc(ip, rack, slot, port)
+        plc = connect_to_plc(ip, rack, slot, port)
+        
+        if plc is None:
+            retry = input("Connessione fallita. Vuoi riprovare? (s/n): ").lower()
+            if retry != 's':
+                print("Uscita dall'applicazione.")
+                return
 
     while True:
         db_number = int(input("Inserisci il numero del DB da leggere (default 200): ") or 200)
@@ -93,8 +102,9 @@ def main():
         if continue_test != 's':
             break
 
-    plc.disconnect()
-    print("Disconnesso dal PLC.")
+    if plc:
+        plc.disconnect()
+        print("Disconnesso dal PLC.")
 
 if __name__ == "__main__":
     main()
