@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import asyncio
 from asyncua import Client, Node
-from asyncua.common.node import Node as NodeClass
 import sys
 import json
 import csv
@@ -61,57 +60,111 @@ def read_node_data_type(client, loop, node_id):
         print(f"Errore durante la lettura del tipo di dato del nodo {node_id}: {e}")
         return None
 
+def resolve_node_reference(client, node_reference):
+    """Risolvi un riferimento di nodo in un oggetto Node di asyncua."""
+    if isinstance(node_reference, Node):
+        return node_reference
+
+    if node_reference == "root":
+        return client.nodes.root
+
+    if node_reference == "objects":
+        return client.nodes.objects
+
+    node_str = str(node_reference)
+
+    if "NodeId(" in node_str:
+        if "NamespaceIndex=3" in node_str and "ServerInterfaces" in node_str:
+            return client.get_node("ns=3;s=ServerInterfaces")
+        if "NamespaceIndex=4" in node_str and "GESTIONALE" in node_str:
+            return client.get_node("ns=4;s=GESTIONALE")
+
+        try:
+            namespace_match = re.search(r'NamespaceIndex=(\d+)', node_str)
+            identifier_string_match = re.search(r"Identifier='([^']+)'", node_str)
+            identifier_int_match = re.search(r"Identifier=(\d+)", node_str)
+
+            if namespace_match:
+                namespace = namespace_match.group(1)
+                if identifier_string_match:
+                    identifier = identifier_string_match.group(1)
+                    node_id_str = f"ns={namespace};s={identifier}"
+                    return client.get_node(node_id_str)
+                if identifier_int_match:
+                    identifier = identifier_int_match.group(1)
+                    node_id_str = f"ns={namespace};i={identifier}"
+                    return client.get_node(node_id_str)
+        except Exception as exc:
+            raise ValueError(f"Impossibile convertire il NodeId fornito: {exc}") from exc
+
+        try:
+            return client.get_node(node_reference)
+        except Exception as exc:
+            raise ValueError(f"NodeId non valido: {exc}") from exc
+
+    try:
+        return client.get_node(node_reference)
+    except Exception as exc:
+        raise ValueError(f"NodeId non valido: {exc}") from exc
+
+
+def format_variable_value(value):
+    """Formatta un valore OPC UA in modo compatto per l'export."""
+    if value is None:
+        return ""
+
+    if isinstance(value, bool):
+        return "True" if value else "False"
+
+    if isinstance(value, (int, float)):
+        return f"{value}"
+
+    if isinstance(value, str):
+        return value
+
+    if isinstance(value, (bytes, bytearray)):
+        return value.hex()
+
+    try:
+        if hasattr(value, "__iter__") and not isinstance(value, (str, bytes, bytearray)):
+            materialized = list(value)
+            return f"Array[{len(materialized)} elementi]"
+    except TypeError:
+        pass
+
+    return str(value)
+
+
+def node_id_to_filename_fragment(node_id_str):
+    """Genera una porzione di nome file leggibile a partire da un NodeId."""
+    if not node_id_str:
+        return "node"
+
+    match = re.match(r"ns=(\d+);(i|s)=(.+)", node_id_str)
+    if match:
+        namespace, identifier_type, identifier = match.groups()
+        sanitized_identifier = re.sub(r"[^0-9A-Za-z]+", "_", identifier).strip("_")
+        if identifier_type == "i":
+            suffix = f"id{sanitized_identifier}"
+        else:
+            suffix = f"s{sanitized_identifier}" if sanitized_identifier else "s"
+        fragment = f"ns{namespace}_{suffix}"
+        return fragment.strip("_") or "node"
+
+    sanitized = re.sub(r"[^0-9A-Za-z]+", "_", node_id_str).strip("_")
+    return sanitized or "node"
+
+
 def browse_nodes(client, loop, parent_node_id="i=85", show_values=False):
     """Esplora i nodi figli di un nodo padre."""
     try:
+        try:
+            parent_node = resolve_node_reference(client, parent_node_id)
+        except ValueError as exc:
+            print(f"Errore durante la risoluzione del nodo {parent_node_id}: {exc}")
+            return []
+
         async def _browse():
-            if parent_node_id == "root":
-                parent_node = client.nodes.root
-            elif parent_node_id == "objects":
-                parent_node = client.nodes.objects
-            else:
-                # Se parent_node_id contiene "NodeId(" significa che è già un oggetto NodeId
-                if "NodeId(" in str(parent_node_id):
-                    # Estrai i componenti dal NodeId
-                    node_str = str(parent_node_id)
-                    if "NamespaceIndex=3" in node_str and "ServerInterfaces" in node_str:
-                        parent_node = client.get_node("ns=3;s=ServerInterfaces")
-                    elif "NamespaceIndex=4" in node_str and "GESTIONALE" in node_str:
-                        parent_node = client.get_node("ns=4;s=GESTIONALE")
-                    else:
-                        # Prova a convertire il NodeId in formato standard
-                        try:
-                            # Estrai namespace e identifier
-                            ns_match = re.search(r'NamespaceIndex=(\d+)', node_str)
-
-                            # Gestisci sia stringhe che interi
-                            id_string_match = re.search(r"Identifier='([^']+)'", node_str)
-                            id_int_match = re.search(r"Identifier=(\d+)", node_str)
-
-                            if ns_match:
-                                namespace = ns_match.group(1)
-
-                                if id_string_match:
-                                    # Identifier stringa
-                                    identifier = id_string_match.group(1)
-                                    node_id_str = f"ns={namespace};s={identifier}"
-                                elif id_int_match:
-                                    # Identifier intero
-                                    identifier = id_int_match.group(1)
-                                    node_id_str = f"ns={namespace};i={identifier}"
-                                else:
-                                    parent_node = client.get_node(parent_node_id)
-                                    return
-
-                                parent_node = client.get_node(node_id_str)
-                            else:
-                                parent_node = client.get_node(parent_node_id)
-                        except Exception as e:
-                            print(f"Errore conversione NodeId: {e}")
-                            parent_node = client.get_node(parent_node_id)
-                else:
-                    parent_node = client.get_node(parent_node_id)
-
             children = await parent_node.get_children()
             nodes_info = []
 
@@ -166,6 +219,102 @@ def browse_nodes(client, loop, parent_node_id="i=85", show_values=False):
     except Exception as e:
         print(f"Errore durante l'esplorazione dei nodi: {e}")
         return []
+
+def export_variables_to_file(client, loop):
+    """Esporta le variabili figlie di un nodo in un file testuale timestampato."""
+    default_node_id = "ns=4;i=1"
+    prompt = f"Inserisci il Node ID da esportare (default {default_node_id}): "
+    node_id_input = input(prompt).strip()
+    if not node_id_input:
+        node_id_input = default_node_id
+
+    try:
+        parent_node = resolve_node_reference(client, node_id_input)
+    except ValueError as exc:
+        print(f"Impossibile risolvere il nodo '{node_id_input}': {exc}")
+        return
+
+    async def _collect_variables(node):
+        children = await node.get_children()
+        entries = []
+
+        for child in children:
+            try:
+                node_class = await child.read_node_class()
+                if node_class.name != 'Variable':
+                    continue
+
+                browse_name = await child.read_browse_name()
+                display_name = await child.read_display_name()
+                name = browse_name.Name or display_name.Text or str(child.nodeid)
+
+                readable = True
+                value = None
+                try:
+                    value = await child.read_value()
+                except Exception:
+                    readable = False
+
+                entries.append({
+                    'name': name,
+                    'node_id': str(child.nodeid),
+                    'value': value,
+                    'readable': readable
+                })
+            except Exception as exc:
+                print(f"Errore durante la lettura delle variabili figlie: {exc}")
+
+        return entries
+
+    try:
+        variables = loop.run_until_complete(_collect_variables(parent_node))
+    except Exception as exc:
+        print(f"Errore durante la raccolta delle variabili: {exc}")
+        return
+
+    if not variables:
+        print("Nessuna variabile trovata sotto il nodo specificato.")
+        return
+
+    variables = sorted(variables, key=lambda item: item['name'])
+
+    resolved_node_id = str(parent_node.nodeid)
+    namespace = getattr(parent_node.nodeid, "NamespaceIndex", None)
+    identifier = getattr(parent_node.nodeid, "Identifier", None)
+
+    if namespace is not None and identifier is not None:
+        header_title = f"Variabili namespace {namespace}, nodo {identifier}"
+    else:
+        header_title = f"Variabili nodo {resolved_node_id}"
+
+    timestamp = datetime.now()
+    timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+    filename_fragment = node_id_to_filename_fragment(resolved_node_id)
+    filename = f"variables_{filename_fragment}_{timestamp.strftime('%Y%m%d_%H%M%S')}.txt"
+
+    name_width = max(20, max(len(item['name']) for item in variables))
+    node_id_width = max(12, max(len(item['node_id']) for item in variables))
+
+    lines = [
+        header_title,
+        f"Generato: {timestamp_str}",
+        "=" * 60,
+        ""
+    ]
+
+    for index, item in enumerate(variables, 1):
+        value_str = format_variable_value(item['value']) if item['readable'] else "(non leggibile)"
+        line = f"{index:2d}. {item['name']:<{name_width}} | {item['node_id']:<{node_id_width}} | Variable   = {value_str}"
+        lines.append(line)
+
+    try:
+        with open(filename, "w", encoding="utf-8") as export_file:
+            export_file.write("\n".join(lines) + "\n")
+    except OSError as exc:
+        print(f"Errore durante la scrittura del file {filename}: {exc}")
+        return
+
+    print(f"Esportate {len(variables)} variabili in {filename}")
 
 def parse_opcua_data(value, expected_type=None):
     """Analizza e formatta il valore letto da OPC UA."""
@@ -315,6 +464,7 @@ def main():
             print("\nOpzioni disponibili:")
             print("1. Leggi valore di un nodo")
             print("2. Esplora nodi")
+            print("3. Esporta variabili su file")
             print("x. Esci")
 
             choice = input("Seleziona un'opzione: ")
@@ -351,6 +501,9 @@ def main():
                 print("Usa questa opzione per navigare attraverso la gerarchia dei nodi.")
                 print("Potrai trovare GESTIONALE seguendo: Objects → ServerInterfaces → GESTIONALE")
                 interactive_node_navigation(client, loop)
+            elif choice == '3':
+                # Esportazione variabili su file
+                export_variables_to_file(client, loop)
                 
             elif choice == 'x':
                 print("Uscita dall'applicazione.")
