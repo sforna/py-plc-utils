@@ -53,11 +53,30 @@ def read_node_data_type(client, loop, node_id):
             node = client.get_node(node_id)
             data_type = await node.read_data_type()
             return data_type
-        
+
         data_type = loop.run_until_complete(_read_data_type())
         return data_type
     except Exception as e:
         print(f"Errore durante la lettura del tipo di dato del nodo {node_id}: {e}")
+        return None
+
+def read_node_variant_type(client, loop, node_id):
+    """Legge il tipo di dato OPC UA di un nodo in formato leggibile."""
+    try:
+        async def _read_variant_type():
+            node = client.get_node(node_id)
+            # Leggi il NodeId del tipo di dato
+            data_type_node_id = await node.read_data_type()
+            # Ottieni il nodo del tipo di dato
+            data_type_node = client.get_node(data_type_node_id)
+            # Leggi il browse name del tipo (es: "Int16", "Int32", "Double")
+            browse_name = await data_type_node.read_browse_name()
+            return browse_name.Name
+
+        type_name = loop.run_until_complete(_read_variant_type())
+        return type_name
+    except Exception as e:
+        # In caso di errore, restituisce None senza stampare (per non inquinare l'output)
         return None
 
 def resolve_node_reference(client, node_reference):
@@ -189,9 +208,19 @@ def browse_nodes(client, loop, parent_node_id="i=85", show_values=False):
                             value = await child.read_value()
                             node_info['value'] = value
                             node_info['value_type'] = type(value).__name__
+
+                            # Leggi anche il tipo di dato OPC UA
+                            try:
+                                data_type_node_id = await child.read_data_type()
+                                data_type_node = client.get_node(data_type_node_id)
+                                browse_name = await data_type_node.read_browse_name()
+                                node_info['opcua_type'] = browse_name.Name
+                            except:
+                                node_info['opcua_type'] = "Unknown"
                         except:
                             node_info['value'] = "(non leggibile)"
                             node_info['value_type'] = "Unknown"
+                            node_info['opcua_type'] = "Unknown"
 
                     nodes_info.append(node_info)
                 except Exception as e:
@@ -210,6 +239,8 @@ def browse_nodes(client, loop, parent_node_id="i=85", show_values=False):
 
                 if 'value' in node:
                     display_text += f" = {node['value']}"
+                    if 'opcua_type' in node and node['opcua_type'] != 'Unknown':
+                        display_text += f" [Tipo: {node['opcua_type']}]"
 
                 print(display_text)
         else:
@@ -250,8 +281,17 @@ def export_variables_to_file(client, loop):
 
                 readable = True
                 value = None
+                opcua_type = "Unknown"
                 try:
                     value = await child.read_value()
+                    # Leggi anche il tipo OPC UA
+                    try:
+                        data_type_node_id = await child.read_data_type()
+                        data_type_node = client.get_node(data_type_node_id)
+                        browse_name = await data_type_node.read_browse_name()
+                        opcua_type = browse_name.Name
+                    except:
+                        pass
                 except Exception:
                     readable = False
 
@@ -259,7 +299,8 @@ def export_variables_to_file(client, loop):
                     'name': name,
                     'node_id': str(child.nodeid),
                     'value': value,
-                    'readable': readable
+                    'readable': readable,
+                    'opcua_type': opcua_type
                 })
             except Exception as exc:
                 print(f"Errore durante la lettura delle variabili figlie: {exc}")
@@ -294,17 +335,19 @@ def export_variables_to_file(client, loop):
 
     name_width = max(20, max(len(item['name']) for item in variables))
     node_id_width = max(12, max(len(item['node_id']) for item in variables))
+    type_width = max(12, max(len(item.get('opcua_type', 'Unknown')) for item in variables))
 
     lines = [
         header_title,
         f"Generato: {timestamp_str}",
-        "=" * 60,
+        "=" * 80,
         ""
     ]
 
     for index, item in enumerate(variables, 1):
         value_str = format_variable_value(item['value']) if item['readable'] else "(non leggibile)"
-        line = f"{index:2d}. {item['name']:<{name_width}} | {item['node_id']:<{node_id_width}} | Variable   = {value_str}"
+        opcua_type = item.get('opcua_type', 'Unknown')
+        line = f"{index:2d}. {item['name']:<{name_width}} | {item['node_id']:<{node_id_width}} | {opcua_type:<{type_width}} = {value_str}"
         lines.append(line)
 
     try:
@@ -393,7 +436,9 @@ def interactive_node_navigation(client, loop):
                         print(f"\n--- Dettagli Variabile: {selected_node['browse_name']} ---")
                         print(f"Node ID: {selected_node['node_id']}")
                         print(f"Valore: {selected_node.get('value', 'N/A')}")
-                        print(f"Tipo: {selected_node.get('value_type', 'N/A')}")
+                        print(f"Tipo Python: {selected_node.get('value_type', 'N/A')}")
+                        if 'opcua_type' in selected_node and selected_node['opcua_type'] != 'Unknown':
+                            print(f"Tipo OPC UA: {selected_node['opcua_type']}")
 
                         # Opzione per leggere il valore in tempo reale
                         refresh = input("\nVuoi aggiornare il valore? (s/n): ").lower()
@@ -402,6 +447,10 @@ def interactive_node_navigation(client, loop):
                             if new_value is not None:
                                 parsed_value = parse_opcua_data(new_value)
                                 print(f"Valore aggiornato: {parsed_value}")
+                                # Rileggi anche il tipo OPC UA
+                                variant_type = read_node_variant_type(client, loop, selected_node['node_id'])
+                                if variant_type:
+                                    print(f"Tipo OPC UA: {variant_type}")
 
                         input("\nPremi Invio per continuare...")
 
