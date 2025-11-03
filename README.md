@@ -17,7 +17,7 @@ Utilities for exploring and interacting with industrial PLCs over Siemens S7, Mo
    source venv/bin/activate
    pip install -r requirements.txt
    ```
-3. Create a `.env` file with connection details such as PLC IPs, ports, and credentials (you can keep a redacted template as `.env.example` for teammates). The tools rely on `python-dotenv` to load these variables automatically.
+3. Run any of the three readers - they will interactively prompt for connection details (IP addresses, ports, rack/slot values, or OPC UA endpoints).
 
 ## Usage
 - **Siemens S7**
@@ -36,7 +36,7 @@ Utilities for exploring and interacting with industrial PLCs over Siemens S7, Mo
   ```bash
   python src/plc_opcua_reader.py
   ```
-  Connect to an OPC UA endpoint, browse the namespace, read node values, and export data to JSON/CSV when prompted.
+  Connect to an OPC UA endpoint, browse the namespace hierarchically, read node values with their OPC UA data types (Int16, Int32, Double, String, etc.), and export variable snapshots to timestamped text files.
 
 ## Development Workflow
 - Run `python -m compileall src` before committing to catch syntax errors.
@@ -44,9 +44,9 @@ Utilities for exploring and interacting with industrial PLCs over Siemens S7, Mo
 - Refer to `AGENTS.md` for in-depth contributor guidelines on style, commits, and security practices.
 
 ## Troubleshooting
-- Ensure the required ports (Modbus 502, S7 102, OPC UA per server config) are reachable from your network segment.
-- When using the OPC UA client, verify certificates or security policies if the server requires them; update the `.env` with the correct URL.
-- For Siemens S7 access errors, double-check rack/slot values or use the scanner mode to discover valid combinations.
+- Ensure the required ports (Modbus 502, S7 102, OPC UA 4840 or per server config) are reachable from your network segment.
+- When using the OPC UA client, verify certificates or security policies if the server requires them. The client will prompt for the endpoint URL (e.g., `opc.tcp://192.168.1.100:4840`).
+- For Siemens S7 access errors, double-check rack/slot values or use the scanner mode to automatically discover valid combinations.
 
 ## License
 This project has not declared a license. Contact the maintainers before using it in production or distributing modified versions.

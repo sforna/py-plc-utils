@@ -4,10 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-py-plc-utils is a Python utility library for reading and writing data from industrial PLCs (Programmable Logic Controllers). The project supports three main protocols:
+py-plc-utils is a Python utility library for reading and writing data from industrial PLCs (Programmable Logic Controllers). The project consists of three standalone interactive CLI tools, each supporting a different industrial protocol:
 - **Siemens S7** communication using the python-snap7 library
 - **Modbus TCP** communication using the pymodbus library
 - **OPC UA** communication using the asyncua library
+
+All three modules are independent, self-contained programs designed for field diagnostics and manual data exploration. They share similar architectural patterns but operate on completely different protocols.
 
 ## Commands
 
@@ -41,56 +43,66 @@ python src/plc_opcua_reader.py
 python -m compileall src
 ```
 
-## Dependencies
-
-- **python-snap7==2.0.2**: Siemens S7 protocol communication
-- **python-dotenv==1.1.1**: Environment variable management (.env file support)
-- **pymodbus==3.11.3**: Modbus TCP protocol communication
-- **asyncua==1.1.8**: OPC UA protocol communication
+### Running with Timeouts (for testing)
+```bash
+# Run OPC UA client with timeout (useful when testing connection issues)
+timeout 10 python src/plc_opcua_reader.py
+timeout 15 python src/plc_opcua_reader.py
+timeout 30 python src/plc_opcua_reader.py
+```
 
 ## Architecture
 
-The project consists of three main modules located in the `src/` directory:
+The project consists of three main modules located in the `src/` directory. Each module is a standalone interactive CLI program with no shared code between them.
 
-### plc_modbus_reader.py
-Handles Modbus TCP communication with industrial PLCs. Key functions:
-- `connect_to_plc()`: Establishes TCP connection to Modbus PLC
-- `read_coils()`, `read_discrete_inputs()`: Digital input/output operations
-- `read_holding_registers()`, `read_input_registers()`: Analog data operations
-- `parse_register_data()`: Converts raw register data to typed values (int16, uint16, int32, uint32, float32, string)
+### Common Architectural Pattern
 
-Supports all standard Modbus data types and register orders (big-endian/little-endian for 32-bit values).
+All three readers follow the same general architecture:
+1. **Connection phase**: Prompt user for connection parameters (IP, port, rack/slot, endpoint URL)
+2. **Interactive menu**: Present numbered options for different operations
+3. **Read operations**: Execute protocol-specific reads with error handling
+4. **Parse and display**: Convert raw protocol data to typed values and display to user
+5. **Optional export**: Some modules support exporting data to timestamped files
 
-### plc_s7_reader.py
-Handles Siemens S7 protocol communication using snap7. Key functions:
-- `connect_to_plc()`: Connects to S7 PLC via IP, rack, and slot parameters
-- `scan_plc_network()`: Scans all rack/slot combinations (0-7 for rack, 0-10 for slot) to discover online PLCs
-- `read_plc_data()`: Reads data blocks (DB) from S7 PLC memory
-- `parse_data()`: Interprets raw bytes as bool, int, real, udint, or string data types
-- `get_string()`: Custom string parsing for S7 string format
+### plc_modbus_reader.py - Modbus TCP Reader
 
-The module offers two connection modes: direct connection with known rack/slot parameters, or automatic scanning to discover accessible PLCs on the network.
+Handles Modbus TCP communication. Key architectural points:
+- Uses pymodbus `ModbusTcpClient` for connectivity
+- Supports 4 Modbus data areas: coils, discrete inputs, holding registers, input registers
+- Register parsing supports multiple data types with configurable endianness
+- **Parse function**: `parse_register_data(registers, data_type, register_order='big')` handles int16, uint16, int32, uint32, float32, and string conversions
+- Multi-register values (32-bit) support both big-endian and little-endian byte order
 
-### plc_opcua_reader.py
-Handles OPC UA communication using asyncua. Key functions:
-- `connect_to_opcua_server()`: Establishes connection to OPC UA endpoint
-- `disconnect_from_server()`: Properly closes OPC UA connection and event loop
-- `read_node_value()`: Reads value from a specific node ID
-- `read_node_data_type()`: Retrieves data type information for a node
-- `resolve_node_reference()`: Converts various node reference formats into Node objects
-- `browse_nodes()`: Navigates OPC UA namespace hierarchy
-- `export_to_json()`, `export_to_csv()`: Export collected data to files
+### plc_s7_reader.py - Siemens S7 Reader
 
-Uses asyncio with synchronous wrapper functions for interactive CLI usage. Supports browsing the namespace tree and exporting snapshots of node values.
+Handles Siemens S7 protocol using snap7. Key architectural points:
+- **Connection requires 3 parameters**: IP address, rack number (0-7), and slot number (0-10)
+- **Two connection modes**:
+  - Direct connection: User provides known rack/slot values
+  - Scanner mode: `scan_plc_network()` systematically tests all 88 rack/slot combinations (8 racks × 11 slots)
+- Reads from data blocks (DBs) in PLC memory with offset-based addressing
+- **Custom string parsing**: S7 strings have special format requiring `get_string()` helper instead of standard snap7 utilities
+- Scanner mode distinguishes between "PLC online with DB accessible" vs "PLC connected but DB not accessible"
 
-All modules provide interactive command-line interfaces for manual PLC data exploration and testing.
+### plc_opcua_reader.py - OPC UA Navigator
+
+Handles OPC UA communication using asyncua. Key architectural points:
+- **Async/sync hybrid architecture**: Uses asyncio internally but wraps all async operations in synchronous helper functions for CLI compatibility
+- Each synchronous function creates an async inner function and runs it via `loop.run_until_complete()`
+- **Connection lifecycle**: `connect_to_opcua_server()` creates event loop and client, `disconnect_from_server()` properly cleans up both
+- **Node reference resolution**: `resolve_node_reference()` handles multiple node ID formats (string references like "objects"/"root", numeric NodeIds, string NodeIds with namespace)
+- **Three main operations**:
+  1. Read single node value
+  2. Interactive hierarchical navigation with `interactive_node_navigation()`
+  3. Export all variables under a node to timestamped file with `export_variables_to_file()`
+- **Data type reading**: Uses `read_data_type()` to get type NodeId, then reads browse name from type node to get human-readable type (Int16, Int32, Double, String, etc.)
+- **Export format**: Generates timestamped text files with format: `variables_{node_fragment}_{timestamp}.txt`
 
 ## Code Conventions
 
-- Italian language is used for user-facing messages and prompts
-- Error handling includes both exception catching and protocol-specific error checking
-- Connection parameters are collected interactively via input prompts (with .env file support via python-dotenv)
-- Data parsing includes proper type conversion and validation
-- All modules follow similar patterns: connect → read → parse → display
-- OPC UA module uses asyncio but wraps async operations in synchronous helper functions for CLI compatibility
-- Network scanning features (S7 rack/slot scanner) test connections systematically and report progress
+- **Italian language**: All user-facing messages, prompts, and menu items are in Italian
+- **Error handling**: Both exception catching and protocol-specific error checking (e.g., Modbus `isError()`)
+- **Connection parameters**: Collected interactively via `input()` prompts (`.env` file support available via python-dotenv but not currently used)
+- **Data type handling**: Document endianness, register width, and expected units inline when working with PLC data
+- **Naming conventions**: Follow PEP 8 with snake_case for functions and ALL_CAPS for connection constants
+- **OPC UA async pattern**: Always wrap async operations in synchronous helper functions that create async inner functions and run them with `loop.run_until_complete()`
