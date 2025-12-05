@@ -83,7 +83,7 @@ def parse_register_data(registers, data_type, register_order='big'):
             else:
                 combined = (registers[1] << 16) | registers[0]
             return struct.unpack('>i', struct.pack('>I', combined))[0]
-        elif data_type == 'uint32':
+        elif data_type == 'uint32' or data_type == 'dword':
             if len(registers) < 2:
                 return None
             if register_order == 'big':
@@ -140,9 +140,9 @@ def main():
                 print(f"Valori letti: {data}")
                 
         elif register_type in ['3', '4']:
-            data_type = input("Inserisci il tipo di dato (int16, uint16, int32, uint32, float32, string): ").lower()
+            data_type = input("Inserisci il tipo di dato (int16, uint16, int32, uint32, dword, float32, string): ").lower()
             
-            if data_type in ['int32', 'uint32', 'float32']:
+            if data_type in ['int32', 'uint32', 'dword', 'float32']:
                 count = 2
             elif data_type == 'string':
                 string_length = int(input("Inserisci la lunghezza della stringa (in caratteri): "))
@@ -156,7 +156,7 @@ def main():
                 registers = read_input_registers(client, address, count, unit_id)
             
             if registers:
-                if data_type in ['int32', 'uint32', 'float32']:
+                if data_type in ['int32', 'uint32', 'dword', 'float32']:
                     register_order = input("Ordine dei registri per dati a 32-bit (big/little, default big): ").lower() or 'big'
                     parsed_value = parse_register_data(registers, data_type, register_order)
                 else:
