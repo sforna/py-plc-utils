@@ -12,29 +12,44 @@ def connect_to_plc(ip, rack, slot, port=102):
         print(f"Errore durante la connessione al PLC: {e}")
         return None
 
-def read_plc_data(plc, db_number, start_offset, size):
+def read_plc_data(plc, area, db_number, start_offset, size):
     try:
-        data = plc.db_read(db_number, start_offset, size)
-        print(f"Dati letti dal DB {db_number} (Offset {start_offset}, Size {size}): {data}")
+        data = plc.read_area(area, db_number, start_offset, size)
+        
+        # Tentativo di ottenere un nome leggibile per l'area
+        try:
+            area_name = area.name
+        except AttributeError:
+            area_name = str(area)
+
+        if area == snap7.Area.DB:
+             print(f"Dati letti dal DB {db_number} (Offset {start_offset}, Size {size}): {data}")
+        else:
+             print(f"Dati letti dall'area {area_name} (Offset {start_offset}, Size {size}): {data}")
         return data
     except Exception as e:
         print(f"Errore durante la lettura dei dati: {e}")
         return None
 
-def parse_data(data, data_type, offset, string_length=None):
+def parse_data(data, data_type, index, string_length=None):
+    """
+    Parsa i dati grezzi. 
+    'index' è l'indice del bit se data_type è 'bool' (byte index assunto 0),
+    altrimenti è l'indice del byte di partenza (solitamente 0).
+    """
     try:
         if data_type == 'bool':
-            return get_bool(data, 0, offset)
+            return get_bool(data, 0, index)
         elif data_type == 'int':
-            return get_int(data, offset)
+            return get_int(data, index)
         elif data_type == 'real':
-            return get_real(data, offset)
+            return get_real(data, index)
         elif data_type == 'string':
             if string_length is None:
                 raise ValueError("Per il tipo 'string', è necessario specificare la lunghezza.")
-            return get_string(data, offset, string_length)
+            return get_string(data, index, string_length)
         elif data_type == 'udint':
-            return get_udint(data, offset)
+            return get_udint(data, index)
         else:
             print("Tipo di dato non supportato.")
             return None
@@ -156,15 +171,57 @@ def main():
                     return
 
     while True:
-        db_number = int(input("Inserisci il numero del DB da leggere (default 200): ") or 200)
+        # Selezione Area di Memoria
+        print("\n--- Selezione Area di Memoria ---")
+        print("1. DB (Data Block)")
+        print("2. Input (PE)")
+        print("3. Output (PA)")
+        print("4. Merker (MK)")
+        print("5. Contatori (CT)")
+        print("6. Timer (TM)")
+        
+        area_input = input("Seleziona area (1-6, default 1): ").strip()
+        
+        # Default
+        area = snap7.Area.DB
+        db_number = 0
+        
+        if area_input == '2':
+            area = snap7.Area.PE
+        elif area_input == '3':
+            area = snap7.Area.PA
+        elif area_input == '4':
+            area = snap7.Area.MK
+        elif area_input == '5':
+            area = snap7.Area.CT
+        elif area_input == '6':
+            area = snap7.Area.TM
+        else:
+            area = snap7.Area.DB
+
+        if area == snap7.Area.DB:
+            db_number = int(input("Inserisci il numero del DB da leggere (default 200): ") or 200)
+
         start_offset = int(input("Inserisci l'offset di partenza: "))
         
         # Scelta del tipo di dato
         data_type = input("Inserisci il tipo di dato (bool, int, udint, string, real): ").lower()
         
+        bit_index = 0
+        string_length = None
+        
         # Calcolo della dimensione in base al tipo di dato
         if data_type == 'bool':
             size = 1  # 1 byte per un bool
+            try:
+                bit_index = int(input("Inserisci la posizione del bit (0-7): "))
+                if not 0 <= bit_index <= 7:
+                    print("Bit index deve essere tra 0 e 7. Impostato a 0.")
+                    bit_index = 0
+            except ValueError:
+                print("Input non valido. Bit index impostato a 0.")
+                bit_index = 0
+                
         elif data_type == 'int':
             size = 2  # 2 byte per un int
         elif data_type == 'real':
@@ -179,13 +236,14 @@ def main():
             continue
 
         # Lettura dei dati
-        data = read_plc_data(plc, db_number, start_offset, size)
+        data = read_plc_data(plc, area, db_number, start_offset, size)
         
         if data:
-            if data_type == 'string':
-                parsed_value = parse_data(data, data_type, 0, string_length)
-            else:
-                parsed_value = parse_data(data, data_type, 0)
+            # Se è bool, passiamo bit_index come parametro index
+            # Se è altro, passiamo 0 come index (byte offset nel buffer letto)
+            parse_index = bit_index if data_type == 'bool' else 0
+            
+            parsed_value = parse_data(data, data_type, parse_index, string_length)
             
             if parsed_value is not None:
                 print(f"Valore parsato: {parsed_value}")
