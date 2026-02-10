@@ -1,3 +1,4 @@
+import math
 import snap7
 from snap7.util import *
 import sys
@@ -31,15 +32,16 @@ def read_plc_data(plc, area, db_number, start_offset, size):
         print(f"Errore durante la lettura dei dati: {e}")
         return None
 
-def parse_data(data, data_type, index, string_length=None):
+def parse_data(data, data_type, index, string_length=None, byte_index=0):
     """
-    Parsa i dati grezzi. 
-    'index' è l'indice del bit se data_type è 'bool' (byte index assunto 0),
-    altrimenti è l'indice del byte di partenza (solitamente 0).
+    Parsa i dati grezzi.
+    'index' è l'indice del bit se data_type è 'bool',
+    'byte_index' è il byte all'interno del buffer per il tipo 'bool',
+    altrimenti 'index' è l'indice del byte di partenza (solitamente 0).
     """
     try:
         if data_type == 'bool':
-            return get_bool(data, 0, index)
+            return get_bool(data, byte_index, index)
         elif data_type == 'int':
             return get_int(data, index)
         elif data_type == 'real':
@@ -205,11 +207,12 @@ def main():
         start_offset = int(input("Inserisci l'offset di partenza: "))
         
         # Scelta del tipo di dato
-        data_type = input("Inserisci il tipo di dato (bool, int, udint, string, real): ").lower()
-        
+        data_type = input("Inserisci il tipo di dato (bool, bool_array, int, udint, string, real): ").lower()
+
         bit_index = 0
         string_length = None
-        
+        bool_array_length = None
+
         # Calcolo della dimensione in base al tipo di dato
         if data_type == 'bool':
             size = 1  # 1 byte per un bool
@@ -221,7 +224,18 @@ def main():
             except ValueError:
                 print("Input non valido. Bit index impostato a 0.")
                 bit_index = 0
-                
+
+        elif data_type == 'bool_array':
+            try:
+                bool_array_length = int(input("Inserisci il numero di elementi dell'array di bool: "))
+                if bool_array_length <= 0:
+                    print("Lunghezza non valida. Impostata a 1.")
+                    bool_array_length = 1
+            except ValueError:
+                print("Input non valido. Lunghezza impostata a 1.")
+                bool_array_length = 1
+            size = math.ceil(bool_array_length / 8)
+
         elif data_type == 'int':
             size = 2  # 2 byte per un int
         elif data_type == 'real':
@@ -239,14 +253,20 @@ def main():
         data = read_plc_data(plc, area, db_number, start_offset, size)
         
         if data:
-            # Se è bool, passiamo bit_index come parametro index
-            # Se è altro, passiamo 0 come index (byte offset nel buffer letto)
-            parse_index = bit_index if data_type == 'bool' else 0
-            
-            parsed_value = parse_data(data, data_type, parse_index, string_length)
-            
-            if parsed_value is not None:
-                print(f"Valore parsato: {parsed_value}")
+            if data_type == 'bool_array':
+                print(f"Array di {bool_array_length} bool:")
+                for i in range(bool_array_length):
+                    val = parse_data(data, 'bool', i % 8, byte_index=i // 8)
+                    print(f"  [{i}] = {val}")
+            else:
+                # Se è bool, passiamo bit_index come parametro index
+                # Se è altro, passiamo 0 come index (byte offset nel buffer letto)
+                parse_index = bit_index if data_type == 'bool' else 0
+
+                parsed_value = parse_data(data, data_type, parse_index, string_length)
+
+                if parsed_value is not None:
+                    print(f"Valore parsato: {parsed_value}")
 
         continue_test = input("Vuoi continuare a leggere altri dati? (s/n): ").lower()
         if continue_test != 's':
