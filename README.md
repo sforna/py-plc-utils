@@ -8,38 +8,51 @@ Utilities for exploring and interacting with industrial PLCs over Siemens S7, Mo
 - **OPC UA navigator** that connects to an endpoint, browses nodes, reads values, and exports snapshots.
 
 ## Getting Started
-1. Install Python 3.10+ and the required system packages for `python-snap7`.
-2. Clone the repository and create an isolated environment:
+The project is managed with [uv](https://docs.astral.sh/uv/). Dependencies and the Python version are declared in `pyproject.toml` / `.python-version` and locked in `uv.lock`.
+
+1. Install uv:
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+2. Install the system packages required by `python-snap7` (the Snap7 shared library).
+3. Clone the repository and sync the environment - uv downloads Python 3.12 if needed and creates `.venv` from the lockfile:
    ```bash
    git clone <repo-url>
    cd py-plc-utils
-   python -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
+   uv sync
    ```
-3. Run any of the three readers - they will interactively prompt for connection details (IP addresses, ports, rack/slot values, or OPC UA endpoints).
+4. Run any of the readers with `uv run` - they will interactively prompt for connection details (IP addresses, ports, rack/slot values, or OPC UA endpoints). `uv run` syncs the environment automatically, so activating the venv is not required.
+
+### Managing dependencies
+```bash
+uv add <package>            # add a runtime dependency (updates pyproject.toml and uv.lock)
+uv remove <package>         # remove a dependency
+uv lock --upgrade           # refresh the lockfile to the latest allowed versions
+uv sync                     # align .venv with uv.lock
+```
 
 ## Usage
 - **Siemens S7**
   ```bash
-  python src/plc_s7_reader.py
+  uv run src/plc_s7_reader.py
   ```
   Choose between direct connection or automatic rack/slot scanning, then read data blocks by specifying offsets, types, and lengths.
 
 - **Modbus TCP**
   ```bash
-  python src/plc_modbus_reader.py
+  uv run src/plc_modbus_reader.py
   ```
   Select coil/discrete/register reads, specify the address range, and optionally parse the returned registers (INT/UINT/REAL/STRING).
 
 - **OPC UA**
   ```bash
-  python src/plc_opcua_reader.py
+  uv run src/plc_opcua_reader.py
   ```
   Connect to an OPC UA endpoint, browse the namespace hierarchically, read node values with their OPC UA data types (Int16, Int32, Double, String, etc.), and export variable snapshots to timestamped text files.
 
 ## Development Workflow
-- Run `python -m compileall src` before committing to catch syntax errors.
+- Run `uv run python -m compileall src` before committing to catch syntax errors.
+- Commit `uv.lock` together with any `pyproject.toml` change so environments stay reproducible.
 - Manual protocol testing is encouraged; include the command you ran and the simulated/real device in your PR notes.
 - Refer to `AGENTS.md` for in-depth contributor guidelines on style, commits, and security practices.
 
