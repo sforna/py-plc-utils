@@ -3,6 +3,9 @@ name = "py-plc-utils"
 version = "0.1.0"
 description = "Interactive CLI tools for reading data from industrial PLCs over Siemens S7, Modbus TCP, and OPC UA"
 readme = "README.md"
+authors = [{ name = "Simone Fornasiere", email = "s.fornasiere@gmail.com" }]
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "asyncua==2.0.1",
