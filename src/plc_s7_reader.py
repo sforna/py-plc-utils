@@ -50,6 +50,12 @@ def parse_data(data, data_type, index, string_length=None, byte_index=0):
             if string_length is None:
                 raise ValueError("For the 'string' type, the length must be specified.")
             return get_string(data, index, string_length)
+        elif data_type == 'char':
+            if string_length is None or string_length <= 0:
+                raise ValueError("For the 'char' type, specify a positive byte count.")
+            if index < 0 or index + string_length > len(data):
+                raise ValueError("Incomplete CHAR buffer.")
+            return bytes(data[index:index + string_length]).decode('latin-1')
         elif data_type == 'udint':
             return get_udint(data, index)
         else:
@@ -214,7 +220,7 @@ def main():
         start_offset = int(input("Enter the start offset: "))
 
         # Data type choice
-        data_type = input("Enter the data type (bool, bool_array, int, udint, string, real): ").lower()
+        data_type = input("Enter the data type (bool, bool_array, int, udint, string, char, real): ").lower()
 
         bit_index = 0
         string_length = None
@@ -258,6 +264,15 @@ def main():
                 print("String capacity must be between 1 and 254 bytes.")
                 continue
             size = string_length + 2
+        elif data_type == 'char':
+            try:
+                string_length = int(input("Enter the number of CHAR bytes to read: "))
+                if string_length <= 0:
+                    raise ValueError
+            except ValueError:
+                print("CHAR byte count must be a positive integer.")
+                continue
+            size = string_length
         else:
             print("Invalid data type.")
             continue

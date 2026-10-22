@@ -81,8 +81,11 @@ Then supply a start offset and a data type:
 | `udint` | 4 bytes | — |
 | `real` | 4 bytes | — |
 | `string` | *n* + 2 bytes | S7 string capacity (`1`–`254` bytes, excluding the header) |
+| `char` | *n* bytes | Positive byte count for a CHAR array, without a header |
 
 For `string`, the start offset must point to the S7 STRING header: the first byte stores the maximum capacity, the second stores the current text length. The reader decodes only that many text bytes using `python-snap7`'s default Latin-1 encoding. For example, at DB201 offset 686, `FE 05 32 31 2F 31 30 ...` represents `21/10`; enter capacity `254` to read 256 bytes including the header.
+
+For `char`, the start offset points directly to the first character. Enter the number of bytes to read (for example, `20` for `ARRAY[0..19] OF CHAR`). All requested bytes are decoded as Latin-1, preserving spaces and NUL characters. This type has no 254-byte STRING limit.
 
 ### Modbus TCP
 
@@ -135,7 +138,7 @@ Vendor-specific structures show up as children of the Objects folder — for exa
 
 - Run `uv run python -m compileall src` before committing to catch syntax errors.
 - Commit `uv.lock` alongside any `pyproject.toml` change so environments stay reproducible.
-- Run `uv run python -m unittest discover -s tests` for S7 string regression tests, including a mocked CLI read. These tests do not require a PLC.
+- Run `uv run python -m unittest discover -s tests` for S7 STRING and CHAR tests, including mocked CLI reads. These tests do not require a PLC.
 - Test hardware interactions against a real or simulated device and note in your PR which one you used and the command you ran.
 
 ## Troubleshooting
