@@ -60,8 +60,15 @@ def parse_data(data, data_type, index, string_length=None, byte_index=0):
         return None
 
 def get_string(data, offset, length):
-    """Read a string from the data buffer."""
-    return data[offset:offset + length].decode('utf-8').strip('\x00')
+    """Read an S7 STRING, whose two-byte header precedes the text."""
+    if not 1 <= length <= 254:
+        raise ValueError("String capacity must be between 1 and 254 bytes.")
+    if offset < 0 or offset + 2 > len(data):
+        raise ValueError("Incomplete S7 STRING header.")
+    actual_length = data[offset + 1]
+    if actual_length > length or offset + 2 + actual_length > len(data):
+        raise ValueError("Incomplete S7 STRING payload or insufficient string capacity.")
+    return snap7.util.get_string(data, offset)
 
 def scan_plc_network(ip, db_number, port=102):
     """Scan every rack/slot combination to find PLCs that are online."""
@@ -243,8 +250,14 @@ def main():
         elif data_type == 'udint':
             size = 4  # 4 bytes for a udint
         elif data_type == 'string':
-            string_length = int(input("Enter the string length (in bytes): "))
-            size = string_length  # The size equals the string length
+            try:
+                string_length = int(input("Enter the S7 string capacity (1-254 bytes, excluding the 2-byte header): "))
+                if not 1 <= string_length <= 254:
+                    raise ValueError
+            except ValueError:
+                print("String capacity must be between 1 and 254 bytes.")
+                continue
+            size = string_length + 2
         else:
             print("Invalid data type.")
             continue
